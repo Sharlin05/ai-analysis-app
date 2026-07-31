@@ -1,0 +1,1127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STRATA — Read the layers of your data</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+:root{
+  --bg:#080b12;
+  --bg-alt:#0d121c;
+  --panel:rgba(255,255,255,0.045);
+  --panel-strong:rgba(255,255,255,0.07);
+  --border:rgba(255,255,255,0.09);
+  --border-strong:rgba(255,255,255,0.16);
+  --teal:#00e6c3;
+  --teal-dim:#0a8f7c;
+  --amber:#ffb454;
+  --amber-dim:#b8823a;
+  --text:#eef1f6;
+  --muted:#8b95a7;
+  --muted-2:#5c6577;
+  --danger:#ff6b6b;
+  --radius:18px;
+  --font-display:'Space Grotesk',sans-serif;
+  --font-body:'Inter',sans-serif;
+  --font-mono:'JetBrains Mono',monospace;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:var(--font-body);}
+body{min-height:100vh;overflow-x:hidden;}
+::selection{background:var(--teal);color:#04140f;}
+::-webkit-scrollbar{width:10px;}
+::-webkit-scrollbar-track{background:var(--bg-alt);}
+::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:10px;}
+
+#bgCanvas{position:fixed;inset:0;z-index:0;opacity:0.55;pointer-events:none;}
+
+.layout{position:relative;z-index:1;display:grid;grid-template-columns:296px 1fr;min-height:100vh;}
+@media (max-width:920px){.layout{grid-template-columns:1fr;}}
+
+/* ---------- Sidebar ---------- */
+.sidebar{
+  border-right:1px solid var(--border);
+  background:linear-gradient(180deg,rgba(13,18,28,0.92),rgba(8,11,18,0.96));
+  padding:1.6rem 1.3rem;
+  position:sticky;top:0;height:100vh;overflow-y:auto;
+}
+@media (max-width:920px){.sidebar{position:relative;height:auto;}}
+.brand{display:flex;align-items:center;gap:.65rem;margin-bottom:1.7rem;}
+.brand-mark{width:38px;height:38px;border-radius:10px;position:relative;flex-shrink:0;
+  background:linear-gradient(155deg,var(--teal),var(--amber));
+  box-shadow:0 8px 22px rgba(0,230,195,0.25);
+}
+.brand-mark::before{content:"";position:absolute;inset:7px;border-radius:5px;background:var(--bg);}
+.brand-mark::after{content:"";position:absolute;left:11px;right:11px;top:14px;bottom:14px;
+  background:repeating-linear-gradient(180deg,var(--teal) 0 2px,transparent 2px 5px);}
+.brand-name{font-family:var(--font-display);font-weight:700;font-size:1.28rem;letter-spacing:0.02em;line-height:1;}
+.brand-tag{color:var(--muted);font-size:.74rem;margin-top:.15rem;letter-spacing:.02em;}
+
+.side-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.12em;color:var(--muted-2);
+  margin:1.4rem 0 .6rem;font-weight:600;}
+
+.dropzone{
+  border:1.5px dashed var(--border-strong);border-radius:14px;padding:1.1rem .9rem;
+  text-align:center;cursor:pointer;transition:.2s ease;background:rgba(255,255,255,0.02);
+}
+.dropzone:hover,.dropzone.drag{border-color:var(--teal);background:rgba(0,230,195,0.06);}
+.dropzone svg{width:26px;height:26px;stroke:var(--teal);margin-bottom:.4rem;}
+.dropzone p{margin:0;font-size:.83rem;color:var(--muted);}
+.dropzone strong{color:var(--text);}
+#csvInput{display:none;}
+.file-chip{margin-top:.6rem;font-family:var(--font-mono);font-size:.72rem;color:var(--teal);
+  background:rgba(0,230,195,0.08);border:1px solid rgba(0,230,195,0.25);border-radius:8px;
+  padding:.35rem .55rem;display:none;word-break:break-all;}
+
+.steps{list-style:none;margin:0;padding:0;position:relative;}
+.steps li{display:flex;gap:.65rem;align-items:flex-start;padding:.4rem 0;font-size:.83rem;color:var(--muted-2);
+  transition:color .3s ease;}
+.steps li .dot{width:20px;height:20px;border-radius:50%;border:1.5px solid var(--border-strong);
+  display:flex;align-items:center;justify-content:center;font-size:.65rem;font-family:var(--font-mono);
+  flex-shrink:0;transition:.3s ease;}
+.steps li.active{color:var(--text);}
+.steps li.active .dot{border-color:var(--teal);background:rgba(0,230,195,0.12);color:var(--teal);box-shadow:0 0 10px rgba(0,230,195,0.35);}
+.steps li.done .dot{border-color:var(--teal);background:var(--teal);color:#04140f;}
+
+.rec-panel{display:none;}
+.rec-item{display:flex;align-items:center;gap:.55rem;padding:.35rem 0;font-size:.83rem;}
+.rec-item input{accent-color:var(--teal);width:15px;height:15px;cursor:pointer;}
+.rec-item label{cursor:pointer;}
+.btn{
+  font-family:var(--font-body);font-weight:600;font-size:.85rem;border:none;border-radius:11px;
+  padding:.65rem .9rem;cursor:pointer;width:100%;transition:.2s ease;letter-spacing:.01em;
+}
+.btn-primary{background:linear-gradient(135deg,var(--teal),#00b39b);color:#04140f;box-shadow:0 10px 26px rgba(0,230,195,0.22);}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 14px 30px rgba(0,230,195,0.32);}
+.btn-ghost{background:var(--panel);border:1px solid var(--border);color:var(--text);}
+.btn-ghost:hover{border-color:var(--border-strong);}
+
+.toggle-row{display:flex;justify-content:space-between;align-items:center;font-size:.82rem;color:var(--muted);padding:.3rem 0;}
+.switch{position:relative;width:36px;height:20px;background:var(--panel-strong);border:1px solid var(--border);border-radius:20px;flex-shrink:0;}
+.switch::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--muted);transition:.2s ease;}
+.switch.on{background:rgba(0,230,195,0.18);border-color:var(--teal);}
+.switch.on::after{transform:translateX(16px);background:var(--teal);}
+
+/* ---------- Main ---------- */
+main{padding:2.2rem 2.6rem 4rem;min-width:0;}
+@media (max-width:640px){main{padding:1.3rem;}}
+
+.hero{position:relative;border-radius:26px;padding:2.4rem 2.6rem;overflow:hidden;margin-bottom:1.8rem;
+  border:1px solid var(--border);background:linear-gradient(160deg,rgba(0,230,195,0.09),rgba(255,180,84,0.05) 60%,rgba(255,255,255,0.02));
+}
+.hero-eyebrow{display:inline-flex;align-items:center;gap:.4rem;font-family:var(--font-mono);font-size:.72rem;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--teal);border:1px solid rgba(0,230,195,0.35);
+  background:rgba(0,230,195,0.08);padding:.35rem .7rem;border-radius:999px;margin-bottom:1rem;}
+.hero-eyebrow .pulse{width:6px;height:6px;border-radius:50%;background:var(--teal);box-shadow:0 0 8px var(--teal);animation:pulse 1.8s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+.hero h1{font-family:var(--font-display);font-size:clamp(1.8rem,3.4vw,2.6rem);font-weight:700;line-height:1.12;margin:0 0 .7rem;
+  max-width:680px;}
+.hero h1 em{font-style:normal;color:var(--teal);}
+.hero p{color:var(--muted);max-width:600px;font-size:1rem;line-height:1.55;margin:0;}
+
+.empty-state{border:1px dashed var(--border-strong);border-radius:22px;padding:3.2rem 2rem;text-align:center;
+  background:var(--panel);}
+.empty-state h2{font-family:var(--font-display);font-size:1.4rem;margin:0 0 .5rem;}
+.empty-state p{color:var(--muted);max-width:460px;margin:0 auto;}
+
+.section{display:none;margin-bottom:1.8rem;}
+.section.open{display:block;}
+.glass-card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+  padding:1.25rem 1.4rem;margin-bottom:1rem;backdrop-filter:blur(14px);}
+.section-title{font-family:var(--font-display);font-weight:600;font-size:1.12rem;margin:0 0 .25rem;}
+.section-muted{color:var(--muted);font-size:.92rem;margin:0;}
+.section-head{display:flex;align-items:baseline;gap:.6rem;margin:1.9rem 0 .9rem;}
+.section-head .idx{font-family:var(--font-mono);color:var(--teal-dim);font-size:.85rem;}
+.section-head h2{font-family:var(--font-display);font-size:1.25rem;margin:0;font-weight:600;}
+
+.metrics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:.9rem;}
+@media (max-width:760px){.metrics-grid{grid-template-columns:repeat(2,1fr);}}
+.metric-card{
+  border-radius:16px;padding:1rem 1.1rem;border:1px solid var(--border);
+  background:linear-gradient(150deg,rgba(255,255,255,0.07),rgba(255,255,255,0.02));
+  transform:perspective(800px) rotateX(0) rotateY(0);transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  will-change:transform;
+}
+.metric-card:hover{border-color:var(--border-strong);box-shadow:0 22px 40px rgba(0,0,0,0.35);}
+.metric-label{color:var(--muted);font-size:.82rem;}
+.metric-value{font-family:var(--font-mono);font-size:1.5rem;font-weight:600;margin:.15rem 0;color:var(--text);}
+.metric-sub{color:var(--muted-2);font-size:.78rem;}
+
+table{width:100%;border-collapse:collapse;font-size:.83rem;}
+thead th{text-align:left;color:var(--teal);font-family:var(--font-mono);font-weight:500;font-size:.74rem;
+  text-transform:uppercase;letter-spacing:.05em;padding:.5rem .7rem;border-bottom:1px solid var(--border-strong);
+  position:sticky;top:0;background:var(--bg-alt);}
+tbody td{padding:.45rem .7rem;border-bottom:1px solid var(--border);color:var(--text);white-space:nowrap;}
+tbody tr:hover{background:rgba(255,255,255,0.03);}
+.table-scroll{overflow:auto;max-height:340px;border-radius:12px;border:1px solid var(--border);}
+
+details{border:1px solid var(--border);border-radius:12px;padding:.2rem .9rem;background:rgba(255,255,255,0.02);}
+details summary{cursor:pointer;padding:.6rem 0;font-size:.9rem;color:var(--teal);font-weight:500;}
+details[open] summary{margin-bottom:.4rem;}
+
+.chip-row{display:flex;flex-wrap:wrap;gap:.5rem;margin:.7rem 0;}
+.chip-check{position:relative;}
+.chip-check input{position:absolute;opacity:0;inset:0;cursor:pointer;}
+.chip-check span{display:inline-flex;align-items:center;gap:.4rem;padding:.45rem .85rem;border-radius:999px;
+  border:1px solid var(--border);font-size:.83rem;color:var(--muted);transition:.15s ease;}
+.chip-check input:checked + span{border-color:var(--teal);color:var(--teal);background:rgba(0,230,195,0.09);}
+
+.field-row{display:flex;gap:1rem;flex-wrap:wrap;margin:.8rem 0;}
+.field{flex:1;min-width:180px;}
+.field label{display:block;font-size:.78rem;color:var(--muted);margin-bottom:.3rem;}
+select, input[type=range]{width:100%;}
+select{background:var(--bg-alt);color:var(--text);border:1px solid var(--border);border-radius:9px;padding:.5rem .6rem;
+  font-family:var(--font-body);font-size:.86rem;}
+input[type=range]{accent-color:var(--teal);}
+
+.viz-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+@media (max-width:860px){.viz-grid{grid-template-columns:1fr;}}
+.dashboard-card{background:var(--bg-alt);border:1px solid var(--border);border-radius:16px;padding:1rem;
+  transform:perspective(1000px);transition:transform .2s ease, box-shadow .2s ease;}
+.dashboard-card:hover{transform:perspective(1000px) translateY(-3px);box-shadow:0 20px 40px rgba(0,0,0,0.4);}
+.dashboard-title{font-weight:600;font-size:.98rem;margin-bottom:.15rem;}
+.dashboard-sub{color:var(--muted);font-size:.82rem;margin-bottom:.7rem;}
+canvas{max-width:100%;}
+.skyline-wrap{grid-column:1/-1;border-radius:16px;overflow:hidden;border:1px solid var(--border);background:radial-gradient(circle at 50% 0%,rgba(0,230,195,0.09),transparent 60%),var(--bg-alt);}
+.skyline-head{padding:1rem 1.1rem 0;}
+#skylineCanvas{width:100%;height:340px;display:block;cursor:grab;}
+#skylineCanvas:active{cursor:grabbing;}
+
+.corr-table{border-collapse:collapse;font-family:var(--font-mono);font-size:.72rem;}
+.corr-table td{width:56px;height:38px;text-align:center;color:#04140f;font-weight:600;}
+.corr-table th{color:var(--muted);font-size:.68rem;padding:.2rem .4rem;}
+
+.readiness-wrap{display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap;}
+.readiness-num{font-family:var(--font-display);font-size:2.6rem;font-weight:700;color:var(--teal);}
+.readiness-bar{flex:1;min-width:200px;height:10px;border-radius:6px;background:var(--panel-strong);overflow:hidden;}
+.readiness-bar > div{height:100%;background:linear-gradient(90deg,var(--amber),var(--teal));border-radius:6px;transition:width .6s ease;}
+.algo-list{list-style:none;padding:0;margin:.8rem 0 0;display:flex;flex-wrap:wrap;gap:.5rem;}
+.algo-list li{background:rgba(0,230,195,0.08);border:1px solid rgba(0,230,195,0.25);color:var(--teal);
+  padding:.4rem .8rem;border-radius:10px;font-size:.83rem;font-family:var(--font-mono);}
+
+.insight-list{list-style:none;padding:0;margin:0;}
+.insight-list li{position:relative;padding:.4rem 0 .4rem 1.3rem;color:var(--text);font-size:.92rem;}
+.insight-list li::before{content:"▸";position:absolute;left:0;color:var(--amber);}
+
+.footer-note{color:var(--muted-2);font-size:.78rem;text-align:center;margin-top:2rem;}
+
+@media (prefers-reduced-motion: reduce){
+  .hero-eyebrow .pulse{animation:none;}
+  .metric-card, .dashboard-card{transition:none;}
+}
+</style>
+</head>
+<body>
+
+<canvas id="bgCanvas"></canvas>
+
+<div class="layout">
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div>
+        <div class="brand-name">Smart Data Explorer</div>
+        <div class="brand-tag">Understand Your Dataset With AI</div>
+      </div>
+    </div>
+
+    <div class="side-label">Upload dataset</div>
+    <div class="dropzone" id="dropzone">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+      <p><strong>Drop a CSV</strong> or click to browse</p>
+      <div class="file-chip" id="fileChip"></div>
+    </div>
+    <input type="file" id="csvInput" accept=".csv">
+
+    <div class="side-label">Analysis workflow</div>
+    <ul class="steps" id="stepsList">
+      <li class="active" data-step="1"><span class="dot">1</span> Upload your dataset</li>
+      <li data-step="2"><span class="dot">2</span> Explore dataset overview</li>
+      <li data-step="3"><span class="dot">3</span> Review data quality</li>
+      <li data-step="4"><span class="dot">4</span> Visualize patterns</li>
+      <li data-step="5"><span class="dot">5</span> Read AI insights</li>
+      <li data-step="6"><span class="dot">6</span> Apply preprocessing</li>
+      <li data-step="7"><span class="dot">7</span> Check ML readiness</li>
+    </ul>
+
+    <div class="rec-panel" id="recPanel">
+      <div class="side-label">Recommendations</div>
+      <div id="recChecks"></div>
+      <div class="toggle-row" style="margin-top:.5rem;">
+        <span>Fill missing values</span>
+        <div class="switch on" id="toggleFill"></div>
+      </div>
+      <div class="toggle-row">
+        <span>Scale numeric features</span>
+        <div class="switch" id="toggleScale"></div>
+      </div>
+      <div style="margin-top:.9rem;">
+        <button class="btn btn-primary" id="showSelectedBtn">Show selected sections</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main>
+    <section class="hero">
+      <div class="hero-eyebrow"><span class="pulse"></span>AI Data assistant</div>
+      <h1>Explore Your <em>Dataset</em> With Confidence..</h1>
+      <p>Simplify data analysis with automated preprocessing suggestions, statistical summaries and interactive visualizations.</p>
+    </section>
+
+    <div class="empty-state" id="emptyState">
+      <h2>💫 Let's explore your data</h2>
+      <p>Upload a CSV file on the left to generate an overview, a quality report, visualizations and machine-learning readiness - no data ever leaves your browser.</p>
+    </div>
+
+    <div id="app" style="display:none;">
+
+      <!-- Dataset Overview (always shown once loaded, mirrors initial overview) -->
+      <div class="glass-card">
+        <div class="section-title">Dataset Overview</div>
+        <div class="section-muted">A quick glance at your data structure, quality and shape.</div>
+      </div>
+      <div id="rawSummaryText" style="margin-bottom:1rem;line-height:1.7;font-size:.93rem;color:var(--text);"></div>
+      <div class="metrics-grid" id="rawMetrics"></div>
+
+      <div class="section-head" style="margin-top:1.6rem;"><h2>Sample Data</h2></div>
+      <div class="table-scroll" id="rawSampleTable"></div>
+
+      <details style="margin-top:1rem;">
+        <summary>Dataset details</summary>
+        <div id="rawMissingTable"></div>
+      </details>
+
+      <!-- ===== Toggleable sections ===== -->
+      <div class="section" id="sec-overview">
+        <div class="section-head"><span class="idx">01</span><h2>Dataset Overview</h2></div>
+        <div id="procSummaryText" style="line-height:1.7;font-size:.93rem;"></div>
+      </div>
+
+      <div class="section" id="sec-quality">
+        <div class="section-head"><span class="idx">02</span><h2>Data Quality Report</h2></div>
+        <div class="section-muted" style="margin-bottom:.8rem;">Review the quality of the dataset after preprocessing.</div>
+        <div class="table-scroll" id="procSampleTable"></div>
+        <details style="margin-top:.9rem;">
+          <summary>Missing values and details</summary>
+          <div id="procMissingTable"></div>
+        </details>
+      </div>
+
+      <div class="section" id="sec-feature">
+        <div class="section-head"><span class="idx">03</span><h2>Feature Analysis</h2></div>
+        <div class="field-row">
+          <div class="field">
+            <label>Choose a column to inspect</label>
+            <select id="featureColSelect"></select>
+          </div>
+        </div>
+        <div class="table-scroll" id="featureSummaryTable"></div>
+      </div>
+
+      <div class="section" id="sec-stats">
+        <div class="section-head"><span class="idx">04</span><h2>Statistical Summary</h2></div>
+        <div id="statsSummaryList" style="font-size:.9rem;line-height:1.9;font-family:var(--font-mono);"></div>
+      </div>
+
+      <div class="section" id="sec-viz">
+        <div class="section-head"><span class="idx">05</span><h2>Data Visualizations</h2></div>
+        <div class="metrics-grid" id="vizKpis" style="margin-bottom:1rem;"></div>
+        <div class="section-muted" style="margin-bottom:.5rem;">Pick the charts you want, then click render to draw only those visuals.</div>
+        <div class="chip-row" id="vizChoices">
+          <label class="chip-check"><input type="checkbox" value="donut" checked><span>Donut chart</span></label>
+          <label class="chip-check"><input type="checkbox" value="clustered" checked><span>Clustered bar chart</span></label>
+          <label class="chip-check"><input type="checkbox" value="column" checked><span>Column chart</span></label>
+          <label class="chip-check"><input type="checkbox" value="scatter" checked><span>Scatter plot</span></label>
+          <label class="chip-check"><input type="checkbox" value="gauge" checked><span>Gauge</span></label>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Top values to display: <span id="topNVal">5</span></label>
+            <input type="range" id="topNSlider" min="3" max="10" value="5">
+          </div>
+          <div class="field">
+            <label>First column</label>
+            <select id="colASelect"></select>
+          </div>
+          <div class="field">
+            <label>Second column</label>
+            <select id="colBSelect"></select>
+          </div>
+        </div>
+        <button class="btn btn-ghost" id="showVizBtn" style="width:auto;padding:.6rem 1.2rem;">Show visualizations</button>
+
+        <div class="viz-grid" id="vizGrid" style="margin-top:1.2rem;"></div>
+      </div>
+
+      <div class="section" id="sec-corr">
+        <div class="section-head"><span class="idx">06</span><h2>Correlation Analysis</h2></div>
+        <div id="corrContainer"></div>
+      </div>
+
+      <div class="section" id="sec-prep">
+        <div class="section-head"><span class="idx">07</span><h2>Preprocessing Recommendations</h2></div>
+        <ul class="insight-list">
+          <li>Fill missing values when needed</li>
+          <li>Remove duplicate rows</li>
+          <li>Scale numeric features for model readiness</li>
+        </ul>
+      </div>
+
+      <div class="section" id="sec-ai">
+        <div class="section-head"><span class="idx">08</span><h2>AI Dataset Summary</h2></div>
+        <div id="aiSummaryText" style="line-height:1.8;font-size:.93rem;"></div>
+      </div>
+
+      <div class="section" id="sec-insights">
+        <div class="section-head"><span class="idx">09</span><h2>Key Insights</h2></div>
+        <ul class="insight-list" id="keyInsightsList"></ul>
+      </div>
+
+      <div class="section" id="sec-ml">
+        <div class="section-head"><span class="idx">10</span><h2>Machine Learning Readiness</h2></div>
+        <div class="glass-card">
+          <div class="readiness-wrap">
+            <div class="readiness-num" id="readinessNum">0%</div>
+            <div class="readiness-bar"><div id="readinessFill" style="width:0%;"></div></div>
+          </div>
+          <div style="margin-top:1rem;font-size:.92rem;color:var(--teal);font-weight:600;" id="mlProblemType"></div>
+          <div style="margin-top:.3rem;font-size:.88rem;color:var(--muted);" id="mlReason"></div>
+          <ul class="algo-list" id="mlAlgoList"></ul>
+        </div>
+      </div>
+
+      <div class="footer-note" id="noSelectionNote" style="display:none;">Choose one or more recommendations in the sidebar and click "selected Recommendations".</div>
+    </div>
+
+    <div class="footer-note"Smart Explorer runs entirely in your browser - nothing you upload is sent anywhere.</div>
+  </main>
+</div>
+
+<script>
+/* =====================================================================
+   THREE.JS AMBIENT BACKGROUND — a drifting particle network
+===================================================================== */
+(function bgScene(){
+  const canvas = document.getElementById('bgCanvas');
+  const renderer = new THREE.WebGLRenderer({canvas, alpha:true, antialias:true});
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100);
+  camera.position.z = 22;
+
+  function size(){
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+  }
+  size();
+  window.addEventListener('resize', size);
+
+  const COUNT = 90;
+  const pts = [];
+  for(let i=0;i<COUNT;i++){
+    pts.push(new THREE.Vector3(
+      (Math.random()-0.5)*36,
+      (Math.random()-0.5)*20,
+      (Math.random()-0.5)*18
+    ));
+  }
+  const ptsGeo = new THREE.BufferGeometry().setFromPoints(pts);
+  const ptsMat = new THREE.PointsMaterial({color:0x00e6c3, size:0.14, transparent:true, opacity:0.85});
+  const pointCloud = new THREE.Points(ptsGeo, ptsMat);
+  scene.add(pointCloud);
+
+  const lineVerts = [];
+  for(let i=0;i<COUNT;i++){
+    for(let j=i+1;j<COUNT;j++){
+      if(pts[i].distanceTo(pts[j]) < 6.2){
+        lineVerts.push(pts[i].x,pts[i].y,pts[i].z, pts[j].x,pts[j].y,pts[j].z);
+      }
+    }
+  }
+  const lineGeo = new THREE.BufferGeometry();
+  lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(lineVerts,3));
+  const lineMat = new THREE.LineBasicMaterial({color:0x2a6b63, transparent:true, opacity:0.25});
+  const lineMesh = new THREE.LineSegments(lineGeo, lineMat);
+  scene.add(lineMesh);
+
+  const group = new THREE.Group();
+  group.add(pointCloud); group.add(lineMesh);
+  scene.add(group);
+
+  let mx=0,my=0;
+  window.addEventListener('mousemove', e=>{
+    mx = (e.clientX/window.innerWidth - 0.5);
+    my = (e.clientY/window.innerHeight - 0.5);
+  });
+
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function animate(){
+    requestAnimationFrame(animate);
+    if(!reduced){
+      group.rotation.y += 0.0009;
+      group.rotation.x += 0.0002;
+      camera.position.x += (mx*4 - camera.position.x)*0.02;
+      camera.position.y += (-my*3 - camera.position.y)*0.02;
+      camera.lookAt(0,0,0);
+    }
+    renderer.render(scene, camera);
+  }
+  animate();
+})();
+
+/* =====================================================================
+   DATA UTILITIES
+===================================================================== */
+const state = { rows:[], columns:[], colTypes:{}, processed:[], charts:{}, skyline:null };
+
+function isMissing(v){ return v===null || v===undefined || v===""; }
+
+function median(arr){
+  const a = arr.filter(v=>!isMissing(v)).slice().sort((x,y)=>x-y);
+  if(!a.length) return 0;
+  const mid = Math.floor(a.length/2);
+  return a.length%2 ? a[mid] : (a[mid-1]+a[mid])/2;
+}
+function mean(arr){
+  const a = arr.filter(v=>!isMissing(v));
+  if(!a.length) return 0;
+  return a.reduce((s,v)=>s+v,0)/a.length;
+}
+function std(arr){
+  const a = arr.filter(v=>!isMissing(v));
+  if(a.length<2) return 0;
+  const m = mean(a);
+  return Math.sqrt(a.reduce((s,v)=>s+(v-m)**2,0)/(a.length-1));
+}
+function mode(arr){
+  const counts = {};
+  let best=null,bestC=-1;
+  arr.filter(v=>!isMissing(v)).forEach(v=>{
+    counts[v]=(counts[v]||0)+1;
+    if(counts[v]>bestC){bestC=counts[v]; best=v;}
+  });
+  return best;
+}
+function quantile(sortedArr, q){
+  if(!sortedArr.length) return 0;
+  const pos = (sortedArr.length-1)*q;
+  const base = Math.floor(pos), rest = pos-base;
+  if(sortedArr[base+1]!==undefined) return sortedArr[base] + rest*(sortedArr[base+1]-sortedArr[base]);
+  return sortedArr[base];
+}
+
+function missingCount(rows, columns){
+  let c=0;
+  rows.forEach(r=>columns.forEach(col=>{ if(isMissing(r[col])) c++; }));
+  return c;
+}
+function duplicateCount(rows){
+  const seen = new Set(); let dup=0;
+  rows.forEach(r=>{
+    const key = JSON.stringify(r);
+    if(seen.has(key)) dup++; else seen.add(key);
+  });
+  return dup;
+}
+function dropDuplicates(rows){
+  const seen = new Set(); const out=[];
+  rows.forEach(r=>{
+    const key = JSON.stringify(r);
+    if(!seen.has(key)){ seen.add(key); out.push(r); }
+  });
+  return out;
+}
+function fillMissing(rows, columns, colTypes, doFill){
+  if(!doFill) return rows.map(r=>({...r}));
+  const meds = {}, modes = {};
+  columns.forEach(col=>{
+    if(colTypes[col]==='numeric') meds[col] = median(rows.map(r=>r[col]));
+    else modes[col] = mode(rows.map(r=>r[col]));
+  });
+  return rows.map(r=>{
+    const nr = {...r};
+    columns.forEach(col=>{
+      if(isMissing(nr[col])) nr[col] = colTypes[col]==='numeric' ? meds[col] : modes[col];
+    });
+    return nr;
+  });
+}
+function scaleNumeric(rows, columns, colTypes, doScale){
+  if(!doScale) return rows;
+  const stats = {};
+  columns.forEach(col=>{
+    if(colTypes[col]==='numeric'){
+      const vals = rows.map(r=>r[col]).filter(v=>!isMissing(v));
+      stats[col] = {m:mean(vals), s:std(vals)||1};
+    }
+  });
+  return rows.map(r=>{
+    const nr = {...r};
+    columns.forEach(col=>{
+      if(colTypes[col]==='numeric' && !isMissing(nr[col])) nr[col] = (nr[col]-stats[col].m)/stats[col].s;
+    });
+    return nr;
+  });
+}
+function valueCounts(rows, col, topN){
+  const counts = new Map();
+  rows.forEach(r=>{
+    const v = isMissing(r[col]) ? '(missing)' : String(r[col]);
+    counts.set(v, (counts.get(v)||0)+1);
+  });
+  return [...counts.entries()].sort((a,b)=>b[1]-a[1]).slice(0, topN||10);
+}
+function pearson(x,y){
+  const n = x.length;
+  const mx = mean(x), my = mean(y);
+  let num=0, dx=0, dy=0;
+  for(let i=0;i<n;i++){ num += (x[i]-mx)*(y[i]-my); dx += (x[i]-mx)**2; dy += (y[i]-my)**2; }
+  const denom = Math.sqrt(dx*dy);
+  return denom===0 ? 0 : num/denom;
+}
+
+function describeDataset(rows, columns, colTypes){
+  const rowsN = rows.length, colsN = columns.length;
+  const numCols = columns.filter(c=>colTypes[c]==='numeric');
+  const catCols = columns.filter(c=>colTypes[c]==='categorical');
+  const lines = [];
+  lines.push(`Dataset contains <strong>${rowsN} rows</strong> and <strong>${colsN} columns</strong>.`);
+  lines.push(`There are <strong>${numCols.length} numeric columns</strong> and <strong>${catCols.length} categorical columns</strong>.`);
+  if(numCols.length) lines.push(`Numeric columns include: ${numCols.slice(0,5).join(', ')}${numCols.length>5?'...':''}.`);
+  if(catCols.length) lines.push(`Categorical columns include: ${catCols.slice(0,5).join(', ')}${catCols.length>5?'...':''}.`);
+  const miss = missingCount(rows, columns);
+  lines.push(miss>0 ? `There are <strong>${miss} missing values</strong> in the dataset.` : 'There are <strong>no missing values</strong> in the dataset.');
+  const dup = duplicateCount(rows);
+  lines.push(dup>0 ? `The dataset contains <strong>${dup} duplicate rows</strong>.` : 'The dataset contains <strong>no duplicate rows</strong>.');
+  return lines.map(l=>`<p style="margin:.3rem 0;">${l}</p>`).join('');
+}
+
+function recommendMLAlgorithms(rows, columns, colTypes){
+  const numericCols = columns.filter(c=>colTypes[c]==='numeric');
+  const catCols = columns.filter(c=>colTypes[c]==='categorical');
+  const targetNames = new Set(['target','label','class','y','output','result']);
+  let targetCol = columns.find(c=>targetNames.has(c.toLowerCase())) || null;
+  if(!targetCol){
+    for(const col of columns){
+      if(catCols.includes(col)){
+        const uniq = new Set(rows.map(r=>r[col]).filter(v=>!isMissing(v))).size;
+        if(uniq<=10){ targetCol = col; break; }
+      }
+    }
+  }
+  if(targetCol){
+    const vals = rows.map(r=>r[targetCol]).filter(v=>!isMissing(v));
+    const uniq = new Set(vals).size;
+    if(colTypes[targetCol]==='categorical' || uniq<=10){
+      return { problem_type:'Classification',
+        reason:`Column '${targetCol}' looks like a class label with ${uniq} distinct values.`,
+        algorithms:['Logistic Regression','Decision Tree Classifier','Random Forest Classifier','XGBoost Classifier'] };
+    }
+    return { problem_type:'Regression',
+      reason:`Column '${targetCol}' appears numeric, so it fits a regression-style prediction task.`,
+      algorithms:['Linear Regression','Random Forest Regressor','XGBoost Regressor','Ridge or Lasso Regression'] };
+  }
+  if(numericCols.length>=3){
+    return { problem_type:'Clustering / Pattern Detection',
+      reason:'The dataset has several numeric features and no obvious target column.',
+      algorithms:['K-Means Clustering','DBSCAN','PCA for dimensionality reduction'] };
+  }
+  return { problem_type:'General ML Starter',
+    reason:'The dataset is small or mixed, so a simple baseline model is a good starting point.',
+    algorithms:['Random Forest','Support Vector Machine','Logistic Regression'] };
+}
+
+/* =====================================================================
+   RENDER HELPERS
+===================================================================== */
+function renderTable(container, rows, columns, maxRows){
+  const shown = rows.slice(0, maxRows||10);
+  let html = '<table><thead><tr>' + columns.map(c=>`<th>${c}</th>`).join('') + '</tr></thead><tbody>';
+  shown.forEach(r=>{
+    html += '<tr>' + columns.map(c=>`<td>${isMissing(r[c]) ? '<span style="color:var(--muted-2)">—</span>' : (typeof r[c]==='number' ? r[c].toLocaleString(undefined,{maximumFractionDigits:3}) : r[c])}</td>`).join('') + '</tr>';
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+function renderMissingTable(container, rows, columns){
+  let html = '<div class="table-scroll"><table><thead><tr><th>Column</th><th>Missing count</th></tr></thead><tbody>';
+  columns.forEach(c=>{
+    const n = rows.reduce((s,r)=>s+(isMissing(r[c])?1:0),0);
+    html += `<tr><td>${c}</td><td>${n}</td></tr>`;
+  });
+  html += '</tbody></table></div>';
+  container.innerHTML = html;
+}
+function metricCardHTML(label, value, sub){
+  return `<div class="metric-card"><div class="metric-label">${label}</div><div class="metric-value">${value}</div><div class="metric-sub">${sub}</div></div>`;
+}
+function attachTilt(container){
+  container.querySelectorAll('.metric-card, .dashboard-card').forEach(card=>{
+    card.addEventListener('mousemove', e=>{
+      const r = card.getBoundingClientRect();
+      const px = (e.clientX-r.left)/r.width - 0.5;
+      const py = (e.clientY-r.top)/r.height - 0.5;
+      card.style.transform = `perspective(800px) rotateX(${(-py*8).toFixed(2)}deg) rotateY(${(px*8).toFixed(2)}deg) translateY(-2px)`;
+    });
+    card.addEventListener('mouseleave', ()=>{ card.style.transform = 'perspective(800px) rotateX(0) rotateY(0)'; });
+  });
+}
+
+/* =====================================================================
+   FILE HANDLING
+===================================================================== */
+const dropzone = document.getElementById('dropzone');
+const csvInput = document.getElementById('csvInput');
+const fileChip = document.getElementById('fileChip');
+
+dropzone.addEventListener('click', ()=>csvInput.click());
+['dragover','dragenter'].forEach(evt=>dropzone.addEventListener(evt, e=>{e.preventDefault(); dropzone.classList.add('drag');}));
+['dragleave','drop'].forEach(evt=>dropzone.addEventListener(evt, e=>{e.preventDefault(); dropzone.classList.remove('drag');}));
+dropzone.addEventListener('drop', e=>{
+  const f = e.dataTransfer.files[0];
+  if(f) handleFile(f);
+});
+csvInput.addEventListener('change', e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); });
+
+function handleFile(file){
+  fileChip.style.display='block';
+  fileChip.textContent = file.name;
+  Papa.parse(file, {
+    header:true, dynamicTyping:true, skipEmptyLines:true,
+    complete: results => {
+      const rows = results.data.map(r=>{
+        const nr = {};
+        Object.keys(r).forEach(k=> nr[k] = (r[k]==='' ? null : r[k]));
+        return nr;
+      });
+      onDataLoaded(rows);
+    }
+  });
+}
+
+function setActiveStep(n){
+  document.querySelectorAll('#stepsList li').forEach(li=>{
+    const s = parseInt(li.dataset.step,10);
+    li.classList.toggle('done', s<n);
+    li.classList.toggle('active', s===n);
+  });
+}
+
+/* =====================================================================
+   MAIN PIPELINE
+===================================================================== */
+function onDataLoaded(rows){
+  if(!rows.length) return;
+  const columns = Object.keys(rows[0]);
+  const colTypes = {};
+  columns.forEach(col=>{
+    let numeric=0, present=0;
+    rows.forEach(r=>{ const v=r[col]; if(!isMissing(v)){present++; if(typeof v==='number' && !isNaN(v)) numeric++;} });
+    colTypes[col] = (present>0 && numeric===present) ? 'numeric' : 'categorical';
+  });
+  state.rows = rows; state.columns = columns; state.colTypes = colTypes;
+
+  document.getElementById('emptyState').style.display='none';
+  document.getElementById('app').style.display='block';
+  document.getElementById('recPanel').style.display='block';
+  setActiveStep(2);
+
+  // Raw overview
+  document.getElementById('rawSummaryText').innerHTML = describeDataset(rows, columns, colTypes);
+  const dup = duplicateCount(rows);
+  const miss = missingCount(rows, columns);
+  const rawMetrics = document.getElementById('rawMetrics');
+  rawMetrics.innerHTML =
+    metricCardHTML('Rows', rows.length.toLocaleString(), 'Observations') +
+    metricCardHTML('Columns', columns.length.toLocaleString(), 'Variables') +
+    metricCardHTML('Missing', miss.toLocaleString(), 'Cells affected') +
+    metricCardHTML('Duplicates', dup.toLocaleString(), 'Repeated rows');
+  attachTilt(rawMetrics);
+  renderTable(document.getElementById('rawSampleTable'), rows, columns, 10);
+  renderMissingTable(document.getElementById('rawMissingTable'), rows, columns);
+
+  // Preprocessing: remove duplicates -> fill missing (matches original default flags)
+  const dedup = dropDuplicates(rows);
+  const doFill = document.getElementById('toggleFill').classList.contains('on');
+  const doScale = document.getElementById('toggleScale').classList.contains('on');
+  const filled = fillMissing(dedup, columns, colTypes, doFill);
+  const processed = scaleNumeric(filled, columns, colTypes, doScale);
+  state.processed = processed;
+
+  // Sidebar recommendation checkboxes
+  const recOptions = [
+    ['Dataset Overview', true, 'sec-overview'],
+    ['Data Quality Report', true, 'sec-quality'],
+    ['Feature Analysis', true, 'sec-feature'],
+    ['Statistical Summary', true, 'sec-stats'],
+    ['Data Visualizations', true, 'sec-viz'],
+    ['Correlation Analysis', true, 'sec-corr'],
+    ['Preprocessing Recommendations', true, 'sec-prep'],
+    ['AI Dataset Summary', false, 'sec-ai'],
+    ['Key Insights', true, 'sec-insights'],
+    ['Machine Learning Readiness', false, 'sec-ml'],
+  ];
+  const recChecks = document.getElementById('recChecks');
+  recChecks.innerHTML = recOptions.map(([label, def])=>`
+    <div class="rec-item">
+      <input type="checkbox" id="rec_${label.replace(/\s+/g,'_')}" ${def?'checked':''}>
+      <label for="rec_${label.replace(/\s+/g,'_')}">${label}</label>
+    </div>`).join('');
+
+  document.getElementById('showSelectedBtn').onclick = ()=>{
+    recOptions.forEach(([label,,secId])=>{
+      const checked = document.getElementById(`rec_${label.replace(/\s+/g,'_')}`).checked;
+      document.getElementById(secId).classList.toggle('open', checked);
+    });
+    const anyChecked = recOptions.some(([label])=>document.getElementById(`rec_${label.replace(/\s+/g,'_')}`).checked);
+    document.getElementById('noSelectionNote').style.display = anyChecked ? 'none':'block';
+    if(document.getElementById('sec-viz').classList.contains('open')) initVizSection();
+    if(document.getElementById('sec-corr').classList.contains('open')) renderCorrelation();
+    if(document.getElementById('sec-feature').classList.contains('open')) initFeatureSection();
+    if(document.getElementById('sec-overview').classList.contains('open'))
+      document.getElementById('procSummaryText').innerHTML = describeDataset(processed, columns, colTypes);
+    if(document.getElementById('sec-quality').classList.contains('open')){
+      renderTable(document.getElementById('procSampleTable'), processed, columns, 10);
+      renderMissingTable(document.getElementById('procMissingTable'), processed, columns);
+    }
+    if(document.getElementById('sec-stats').classList.contains('open')) renderStatsSummary();
+    if(document.getElementById('sec-ai').classList.contains('open'))
+      document.getElementById('aiSummaryText').innerHTML = describeDataset(processed, columns, colTypes);
+    if(document.getElementById('sec-insights').classList.contains('open')) renderKeyInsights();
+    if(document.getElementById('sec-ml').classList.contains('open')) renderMLReadiness();
+    setActiveStep(7);
+  };
+
+  ['toggleFill','toggleScale'].forEach(id=>{
+    document.getElementById(id).addEventListener('click', function(){
+      this.classList.toggle('on');
+    });
+  });
+
+  populateColumnSelects();
+}
+
+function renderStatsSummary(){
+  const {processed, columns, colTypes} = state;
+  const numCols = columns.filter(c=>colTypes[c]==='numeric').slice(0,5);
+  const container = document.getElementById('statsSummaryList');
+  if(!numCols.length){ container.innerHTML = '<span class="section-muted">No numeric columns available.</span>'; return; }
+  container.innerHTML = numCols.map(col=>{
+    const vals = processed.map(r=>r[col]).filter(v=>!isMissing(v));
+    if(!vals.length) return '';
+    return `<div><strong style="color:var(--teal);">${col}</strong>: mean = ${mean(vals).toFixed(2)}, std = ${std(vals).toFixed(2)}, min = ${Math.min(...vals).toFixed(2)}, max = ${Math.max(...vals).toFixed(2)}</div>`;
+  }).join('');
+}
+
+function renderKeyInsights(){
+  const {rows, processed, columns} = state;
+  const list = document.getElementById('keyInsightsList');
+  list.innerHTML = `
+    <li>The dataset has ${processed.length} rows and ${columns.length} columns.</li>
+    <li>Missing values remaining: ${missingCount(processed, columns)}</li>
+    <li>Duplicate rows removed: ${duplicateCount(rows)}</li>`;
+}
+
+function renderMLReadiness(){
+  const {processed, columns, rows} = state;
+  const miss = missingCount(processed, columns);
+  const dupRemoved = duplicateCount(rows) ? 0 : 0; // duplicates already removed prior to this stage
+  let score = Math.max(0, 100 - miss*5 - dupRemoved*10);
+  score = Math.min(score, 100);
+  document.getElementById('readinessNum').textContent = score.toFixed(0)+'%';
+  document.getElementById('readinessFill').style.width = score+'%';
+  const rec = recommendMLAlgorithms(processed, columns, state.colTypes);
+  document.getElementById('mlProblemType').textContent = 'Suggested problem type: ' + rec.problem_type;
+  document.getElementById('mlReason').textContent = rec.reason;
+  document.getElementById('mlAlgoList').innerHTML = rec.algorithms.map(a=>`<li>${a}</li>`).join('');
+}
+
+function populateColumnSelects(){
+  const {columns, colTypes} = state;
+  const numericCols = columns.filter(c=>colTypes[c]==='numeric');
+  const fill = (sel, list)=>{ sel.innerHTML = list.map(c=>`<option value="${c}">${c}</option>`).join(''); };
+  fill(document.getElementById('colASelect'), columns);
+  fill(document.getElementById('colBSelect'), columns.length>1?columns.slice(1):columns);
+  fill(document.getElementById('featureColSelect'), columns);
+  document.getElementById('featureColSelect').onchange = initFeatureSection;
+}
+
+function initFeatureSection(){
+  const {processed, colTypes} = state;
+  const col = document.getElementById('featureColSelect').value;
+  const container = document.getElementById('featureSummaryTable');
+  if(colTypes[col]==='numeric'){
+    const vals = processed.map(r=>r[col]).filter(v=>!isMissing(v)).sort((a,b)=>a-b);
+    const rowsHtml = [
+      ['count', vals.length],
+      ['mean', mean(vals).toFixed(4)],
+      ['std', std(vals).toFixed(4)],
+      ['min', vals.length?Math.min(...vals).toFixed(4):'-'],
+      ['25%', quantile(vals,0.25).toFixed(4)],
+      ['50%', quantile(vals,0.5).toFixed(4)],
+      ['75%', quantile(vals,0.75).toFixed(4)],
+      ['max', vals.length?Math.max(...vals).toFixed(4):'-'],
+    ];
+    container.innerHTML = '<table><thead><tr><th>Stat</th><th>Value</th></tr></thead><tbody>'+
+      rowsHtml.map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join('')+'</tbody></table>';
+  } else {
+    const vc = valueCounts(processed, col, 10);
+    container.innerHTML = '<table><thead><tr><th>'+col+'</th><th>count</th></tr></thead><tbody>'+
+      vc.map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join('')+'</tbody></table>';
+  }
+}
+
+/* -------------------- Visualizations -------------------- */
+function initVizSection(){
+  const {processed, columns, colTypes} = state;
+  const numCols = columns.filter(c=>colTypes[c]==='numeric');
+  const kpis = document.getElementById('vizKpis');
+  kpis.innerHTML =
+    metricCardHTML('Rows', processed.length.toLocaleString(), 'Observations after cleaning') +
+    metricCardHTML('Columns', columns.length.toLocaleString(), 'Features available') +
+    metricCardHTML('Missing', missingCount(processed, columns).toLocaleString(), 'Remaining empty cells') +
+    metricCardHTML('Numeric', numCols.length.toLocaleString(), 'Numeric fields');
+  attachTilt(kpis);
+
+  document.getElementById('topNSlider').oninput = function(){ document.getElementById('topNVal').textContent = this.value; };
+  document.getElementById('colASelect').onchange = function(){
+    const b = document.getElementById('colBSelect');
+    const rest = columns.filter(c=>c!==this.value);
+    b.innerHTML = (rest.length?rest:columns).map(c=>`<option value="${c}">${c}</option>`).join('');
+  };
+  document.getElementById('showVizBtn').onclick = renderVisualizations;
+}
+
+function destroyChart(key){ if(state.charts[key]){ state.charts[key].destroy(); delete state.charts[key]; } }
+
+function renderVisualizations(){
+  const {processed, columns, colTypes} = state;
+  const chosen = [...document.querySelectorAll('#vizChoices input:checked')].map(i=>i.value);
+  const topN = parseInt(document.getElementById('topNSlider').value, 10);
+  const colA = document.getElementById('colASelect').value;
+  const colB = document.getElementById('colBSelect').value;
+  const grid = document.getElementById('vizGrid');
+  grid.innerHTML = '';
+  Object.keys(state.charts).forEach(destroyChart);
+
+  const CHART_COLORS = ['#00e6c3','#ffb454','#4f9dff','#ff6b9c','#8bd450','#c084fc'];
+
+  if(chosen.includes('donut')){
+    const card = document.createElement('div');
+    card.className='dashboard-card';
+    card.innerHTML = '<div class="dashboard-title">Donut Chart</div><div class="dashboard-sub">Column type distribution for your dataset.</div><canvas id="donutChart" height="220"></canvas>';
+    grid.appendChild(card);
+    const numCount = columns.filter(c=>colTypes[c]==='numeric').length;
+    const catCount = columns.length - numCount;
+    state.charts.donut = new Chart(document.getElementById('donutChart'), {
+      type:'doughnut',
+      data:{ labels:['Numeric','Categorical'], datasets:[{ data:[numCount,catCount], backgroundColor:['#00e6c3','#ffb454'], borderColor:'#0d121c', borderWidth:2 }] },
+      options:{ plugins:{legend:{labels:{color:'#eef1f6'}}} }
+    });
+  }
+
+  if(chosen.includes('clustered')){
+    const card = document.createElement('div');
+    card.className='dashboard-card';
+    card.innerHTML = `<div class="dashboard-title">Clustered Bar Chart</div><div class="dashboard-sub">Top ${topN} values: ${colA} vs ${colB}</div><canvas id="clusteredChart" height="220"></canvas>`;
+    grid.appendChild(card);
+    const vcA = valueCounts(processed, colA, topN);
+    const vcB = valueCounts(processed, colB, topN);
+    const labelsSet = [...new Set([...vcA.map(v=>v[0]), ...vcB.map(v=>v[0])])];
+    const mapA = new Map(vcA), mapB = new Map(vcB);
+    state.charts.clustered = new Chart(document.getElementById('clusteredChart'), {
+      type:'bar',
+      data:{ labels:labelsSet,
+        datasets:[
+          {label:colA, data:labelsSet.map(l=>mapA.get(l)||0), backgroundColor:'#00e6c3'},
+          {label:colB, data:labelsSet.map(l=>mapB.get(l)||0), backgroundColor:'#ffb454'},
+        ]},
+      options:{ scales:{ x:{ticks:{color:'#8b95a7'}}, y:{ticks:{color:'#8b95a7'}} }, plugins:{legend:{labels:{color:'#eef1f6'}}} }
+    });
+  }
+
+  if(chosen.includes('column')){
+    const card = document.createElement('div');
+    card.className='dashboard-card';
+    card.innerHTML = `<div class="dashboard-title">Column Chart</div><div class="dashboard-sub">Top ${topN} values for ${colA}</div><canvas id="columnChart" height="220"></canvas>`;
+    grid.appendChild(card);
+    const vc = valueCounts(processed, colA, topN);
+    state.charts.column = new Chart(document.getElementById('columnChart'), {
+      type:'bar',
+      data:{ labels:vc.map(v=>v[0]), datasets:[{label:'Count', data:vc.map(v=>v[1]), backgroundColor:'#4f9dff'}] },
+      options:{ scales:{ x:{ticks:{color:'#8b95a7'}}, y:{ticks:{color:'#8b95a7'}} }, plugins:{legend:{display:false}} }
+    });
+  }
+
+  if(chosen.includes('scatter')){
+    const numeric = columns.filter(c=>colTypes[c]==='numeric');
+    const card = document.createElement('div');
+    card.className='dashboard-card';
+    if(numeric.length<2){
+      card.innerHTML = '<div class="dashboard-title">Scatter Plot</div><div class="dashboard-sub">Not enough numeric columns for a scatter plot.</div>';
+    } else {
+      const x = numeric[0], y = numeric[1]!==x?numeric[1]:numeric[0];
+      card.innerHTML = `<div class="dashboard-title">Scatter Plot</div><div class="dashboard-sub">${x} vs ${y}</div><canvas id="scatterChart" height="220"></canvas>`;
+      grid.appendChild(card);
+      const pts = processed.filter(r=>!isMissing(r[x])&&!isMissing(r[y])).slice(0,500).map(r=>({x:r[x],y:r[y]}));
+      state.charts.scatter = new Chart(document.getElementById('scatterChart'), {
+        type:'scatter',
+        data:{ datasets:[{label:`${x} vs ${y}`, data:pts, backgroundColor:'rgba(0,230,195,0.65)'}] },
+        options:{ scales:{ x:{ticks:{color:'#8b95a7'}, title:{display:true,text:x,color:'#8b95a7'}}, y:{ticks:{color:'#8b95a7'}, title:{display:true,text:y,color:'#8b95a7'}} }, plugins:{legend:{display:false}} }
+      });
+      grid.appendChild(card);
+      return renderGaugeAndSkyline();
+    }
+    grid.appendChild(card);
+  }
+
+  if(chosen.includes('gauge')){
+    const card = document.createElement('div');
+    card.className='dashboard-card';
+    card.innerHTML = '<div class="dashboard-title">Data Completeness Gauge</div><div class="dashboard-sub">Missing values and dataset completeness.</div><canvas id="gaugeCanvas" width="360" height="200"></canvas>';
+    grid.appendChild(card);
+    drawGauge(document.getElementById('gaugeCanvas'));
+  }
+
+  attachTilt(grid);
+  renderSkyline();
+}
+function renderGaugeAndSkyline(){ attachTilt(document.getElementById('vizGrid')); renderSkyline(); }
+
+function drawGauge(canvas){
+  const {processed, columns} = state;
+  const totalCells = processed.length*columns.length;
+  const missing = missingCount(processed, columns);
+  const completeness = totalCells ? Math.max(0, 1-missing/totalCells)*100 : 0;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0,0,w,h);
+  const cx = w/2, cy = h-20, r = Math.min(w,h)-40;
+  ctx.lineWidth = 26; ctx.lineCap='butt';
+  ctx.strokeStyle = '#1e2534';
+  ctx.beginPath(); ctx.arc(cx,cy,r/2,Math.PI,2*Math.PI); ctx.stroke();
+  ctx.strokeStyle = '#00e6c3';
+  ctx.beginPath(); ctx.arc(cx,cy,r/2,Math.PI,Math.PI + Math.PI*(completeness/100)); ctx.stroke();
+  ctx.fillStyle = '#eef1f6'; ctx.font='700 20px Space Grotesk'; ctx.textAlign='center';
+  ctx.fillText(completeness.toFixed(1)+'% complete', cx, cy-30);
+  ctx.fillStyle = '#8b95a7'; ctx.font='13px Inter';
+  ctx.fillText('Missing: '+(100-completeness).toFixed(1)+'%', cx, cy-10);
+}
+
+/* -------------------- 3D Data Skyline (signature visual) -------------------- */
+function renderSkyline(){
+  const grid = document.getElementById('vizGrid');
+  const wrap = document.createElement('div');
+  wrap.className = 'skyline-wrap';
+  wrap.innerHTML = '<div class="skyline-head"><div class="dashboard-title">3D Data Skyline</div><div class="dashboard-sub">Each tower is a numeric column — height maps to its average value, relative to its own range. Drag to rotate.</div></div><canvas id="skylineCanvas"></canvas>';
+  grid.appendChild(wrap);
+  buildSkyline(document.getElementById('skylineCanvas'));
+}
+
+function buildSkyline(canvas){
+  if(state.skyline && state.skyline.raf) cancelAnimationFrame(state.skyline.raf);
+  const {processed, columns, colTypes} = state;
+  const numCols = columns.filter(c=>colTypes[c]==='numeric').slice(0,8);
+
+  const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
+  const width = canvas.clientWidth || 600, height = 340;
+  renderer.setSize(width, height, false);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, width/height, 0.1, 100);
+  camera.position.set(0, 5, 11);
+  camera.lookAt(0,0,0);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+  dir.position.set(5,8,5);
+  scene.add(dir);
+
+  const group = new THREE.Group();
+  scene.add(group);
+
+  if(!numCols.length){
+    const geo = new THREE.IcosahedronGeometry(2, 0);
+    const mat = new THREE.MeshStandardMaterial({color:0x00e6c3, wireframe:true});
+    group.add(new THREE.Mesh(geo, mat));
+  } else {
+    const spacing = 1.6;
+    const start = -((numCols.length-1)*spacing)/2;
+    numCols.forEach((col, i)=>{
+      const vals = processed.map(r=>r[col]).filter(v=>!isMissing(v));
+      const mn = Math.min(...vals), mx = Math.max(...vals);
+      const avg = mean(vals);
+      const norm = mx>mn ? (avg-mn)/(mx-mn) : 0.5;
+      const h = 0.6 + norm*4.2;
+      const geo = new THREE.BoxGeometry(0.9, h, 0.9);
+      const t = i/Math.max(1,numCols.length-1);
+      const color = new THREE.Color().lerpColors(new THREE.Color(0x00e6c3), new THREE.Color(0xffb454), t);
+      const mat = new THREE.MeshStandardMaterial({color, roughness:0.4, metalness:0.15});
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(start+i*spacing, h/2 - 1.4, 0);
+      group.add(mesh);
+    });
+  }
+
+  let dragging=false, lastX=0, rotY=0.4;
+  group.rotation.y = rotY;
+  canvas.addEventListener('pointerdown', e=>{dragging=true; lastX=e.clientX;});
+  window.addEventListener('pointerup', ()=>dragging=false);
+  window.addEventListener('pointermove', e=>{
+    if(!dragging) return;
+    rotY += (e.clientX-lastX)*0.008;
+    lastX = e.clientX;
+  });
+
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function animate(){
+    const raf = requestAnimationFrame(animate);
+    state.skyline = {raf};
+    if(!dragging && !reduced) rotY += 0.0025;
+    group.rotation.y = rotY;
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  window.addEventListener('resize', ()=>{
+    const w = canvas.clientWidth || 600;
+    renderer.setSize(w, 340, false);
+    camera.aspect = w/340;
+    camera.updateProjectionMatrix();
+  });
+}
+
+/* -------------------- Correlation heatmap -------------------- */
+function renderCorrelation(){
+  const {processed, columns, colTypes} = state;
+  const numCols = columns.filter(c=>colTypes[c]==='numeric');
+  const container = document.getElementById('corrContainer');
+  if(numCols.length<2){
+    container.innerHTML = '<div class="section-muted">Not enough numeric columns for correlation analysis.</div>';
+    return;
+  }
+  const series = {};
+  numCols.forEach(c=>{ series[c] = processed.map(r=>isMissing(r[c])?0:r[c]); });
+  let html = '<div class="table-scroll"><table class="corr-table"><thead><tr><th></th>'+numCols.map(c=>`<th>${c}</th>`).join('')+'</tr></thead><tbody>';
+  numCols.forEach(a=>{
+    html += `<tr><th>${a}</th>`;
+    numCols.forEach(b=>{
+      const r = pearson(series[a], series[b]);
+      const t = (r+1)/2;
+      const color = `rgb(${Math.round(255-t*255)},${Math.round(80+t*150)},${Math.round(180-t*80)})`;
+      html += `<td style="background:${color};">${r.toFixed(2)}</td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  container.innerHTML = html;
+}
+</script>
+</body>
+</html>
